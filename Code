@@ -1,0 +1,153 @@
+
+### Let's have some fun
+
+library(tidyverse)
+
+library(modeest)
+
+#library(extrafont)
+#font_import("Helvetica")
+#loadfonts(device = "win")
+
+### Binomial
+
+binom <- rbinom(n = 10000, size = 20, prob = 0.82)
+
+hist(binom, breaks = 30, col = "darkgreen")
+
+
+### Poisson 
+
+poisson <- dpois(0:15, lambda=4.6)
+
+plot(poisson, type = "h", lwd=3, col="blue")
+
+### Try a skewed distribution using beta distribution
+
+spend_dist <- rbeta(10000,1.2,8)*1000 %>% as.matrix() 
+
+spend_dist <- spend_dist %>% as.data.frame()
+
+names(spend_dist) <- "Spend"
+
+ggplot(spend_dist, aes(Spend)) + 
+  geom_histogram(fill = "light blue", bins = 200, colour = "black") + 
+  geom_vline(xintercept = mean(spend_dist$Spend), colour = "dark blue", size = .8, linetype = 2) + 
+  geom_vline(xintercept = median(spend_dist$Spend), colour = "blue", size = .8, linetype = 2) + 
+  geom_vline(xintercept = mlv(spend_dist$Spend, method = "density")[1] %>% unlist(), colour = "slateblue", 
+             size = .8, linetype = 2) + 
+  theme_bw() +
+  labs(y = "Count", title = "Histogram of Spend (Simulated Data)", 
+       caption = paste0("Simulated data from beta distribution with alpha = 1.2 and beta = 8 \n
+       Lines indicate mode ($", mlv(spend_dist$Spend, method = "density")[1] %>% unlist() %>% round(1),
+                        "), median ($", median(spend_dist$Spend) %>% round(1),
+                        ") and mean ($", mean(spend_dist$Spend) %>% round(1),
+                        ") respectively (left to right)")) +
+  scale_x_continuous(labels = scales::dollar)
+
+### So we have our population values
+### Let's sample with different sample sizes
+
+samples <- as.data.frame(matrix(nrow = 0, ncol=4))
+
+names(samples) <- c("sample size","Mean", "Median", "Mode")
+
+for( i in seq(5,60,5)){
+#for( i in seq(5,1000,80)){
+  
+  sample_size <- i
+  
+  for(i in seq(1:1000)){
+    
+    samples <- rbind(samples,
+                     spend_dist %>% sample_n(sample_size) %>% 
+                       summarise(Mean = mean(Spend),
+                                 Median = median(Spend), 
+                                 Mode = mlv(Spend, method = "density")[1] %>% unlist()) 
+                                    %>% mutate(sample_size = sample_size)
+                     )
+    
+  }
+  
+}
+
+
+samples <- samples %>% mutate(sample_size_char = as.factor(paste("n = ",as.character(sample_size))))
+
+samples$sample_size_char <- fct_reorder(samples$sample_size_char, samples$sample_size)
+
+### Let's see how it looks
+
+samples_stats <- samples %>% group_by(sample_size) %>% summarise(Mean = mean(Mean),
+                                                                 Median = mean(Median),
+                                                                 mode = mean(Mode))
+
+### Showing all on single plot
+
+samples %>% gather(drop = c(Mean, Median, Mode)) %>% 
+  ggplot(aes(value)) + geom_density(aes(fill = key), alpha = .6) + 
+  facet_wrap(sample_size~.) +
+  theme_bw() +
+  labs(x = "Summary Statistics from Different Sample Sizes", y = "Density",
+       title = "Understanding Central Limit Theorem", 
+       subtitle = "Density Plots of Summary Statistics for Different Sample Sizes",
+       caption = "As expected, the distribution of mean scores is normal at n = 30.
+       1000 samples were drawn at each sample size and summary statistics were produced for each.") +
+  theme(legend.title=element_blank()) +
+  scale_x_continuous(labels = scales::dollar) +
+  scale_fill_manual(values=c("salmon", "slateblue", "light blue"))
+  
+### Now need law of large numbers
+
+samples_full <- as.data.frame(matrix(nrow = 0, ncol = 2))
+
+names(samples_full) <- c("Spend", "sample_size")
+  
+for(i in c(10,20,30,60,120,180,400,600,800,1600,2400,3000)){
+  
+  sample_size <- i
+  
+  samples_full <- rbind(samples_full,
+                     spend_dist %>% sample_n(sample_size) %>% 
+                      mutate(sample_size = sample_size)
+  )
+    
+}
+
+samples_full <- samples_full %>% mutate(sample_size_char = as.factor(paste("n =",as.character(sample_size))))
+
+samples_full$sample_size_char <- fct_reorder(samples_full$sample_size_char, samples_full$sample_size)
+
+  
+### Show on single plot
+
+labels <- samples_full %>% 
+  group_by(sample_size_char) %>% summarise(Median = median(Spend) %>% round(2)) 
+
+samples_full %>% ggplot(aes(Spend)) + 
+  geom_histogram(fill = "light blue", bins = 50, colour = "black") + 
+  facet_wrap(.~sample_size_char) + 
+  theme_bw() +
+  geom_vline(
+    data = samples_full %>% 
+      group_by(sample_size_char) %>% summarise(Mode = mlv(Spend, method = "density")[1] %>% unlist()),
+    aes(xintercept = Mode), 
+    colour = "light blue", size = .8, alpha = .6, linetype = 2) + 
+  geom_vline(
+    data = samples_full %>% 
+      group_by(sample_size_char) %>% summarise(Median = median(Spend)),
+    aes(xintercept = Median), 
+    colour = "slateblue", size = .8, alpha = .6, linetype = 2) +
+  geom_vline(
+    data = samples_full %>%  
+      group_by(sample_size_char) %>% summarise(Mean = mean(Spend)),
+    aes(xintercept = Mean), 
+    colour = "salmon", size = .8, alpha = .6, linetype = 2) +
+  geom_label(data = labels, aes(label = paste0("Median = ",label = Median), x = 500, y = 200),
+             label.size = .1) +
+  scale_x_continuous(labels = scales::dollar) + 
+  labs(y = "Count", title = "The Law of Large Numbers",
+       subtitle = "Samples of Different Sizes and Parameter Estimates", 
+       caption = "Lines on plots indicate mode, median and mean respectively.
+       As sample size increases, the parameter estimates approach the true values.")
+
